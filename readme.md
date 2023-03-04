@@ -1,5 +1,7 @@
 # Thread pool and channel
 
+> 用于解决多任务以及同步关系的一种思路，类似Map-Reduce？
+
 ## Project structure
 ```shell
 ├── CMakeLists.txt
