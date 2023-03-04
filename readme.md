@@ -36,17 +36,18 @@ int main(int argc, char* argv[]){
     };
     auto get = [&ch](){
         int msg, round;
-        ch >> round >> msg;
+        ch >> round >> msg; // 如果没有数据，线程会被`ch`锁上，直到有数据传出
         delay_rnd_time(3500, 500);
         print("\tGet :{} {}\n", round, msg);
     };
 
     for(auto i=0; true; i++){
-        auto f1=pool.submit(post, i);
         pool.submit(get);
+        auto f1=pool.submit(post, i); // 顺序无关
         if(f1.get() <= 20)
             break;
     }
+
 }
 ```
 ----

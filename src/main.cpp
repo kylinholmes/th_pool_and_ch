@@ -44,8 +44,8 @@ int main(int argc, char* argv[]){
     };
 
     for(auto i=0; true; i++){
-        auto f1=pool.submit(post, i);
         pool.submit(get);
+        auto f1=pool.submit(post, i);
         if(f1.get() <= 20)
             break;
     }
