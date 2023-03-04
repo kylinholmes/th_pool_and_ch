@@ -1,0 +1,37 @@
+#pragma once
+
+#include "tool"
+#include <condition_variable>
+#include <mutex>
+#include <queue>
+namespace ch {
+using tools::safe_queue;
+using std::mutex, std::unique_lock;
+using uni_lock = unique_lock<mutex>;
+
+template<typename Msg>
+class channel {
+    safe_queue<Msg> q;
+    std::condition_variable cnd_var;
+    mutex cnd_mtx;
+public:
+    channel():cnd_var(){};
+    channel(const channel &) = delete;
+    channel(channel &&) = delete;
+    channel &operator=(const channel &) = delete;
+    channel &operator=(channel &&) = delete;
+    ~channel(){};
+    channel& operator >> (Msg& m) {
+        uni_lock lock(cnd_mtx);
+        if(q.empty())
+            cnd_var.wait(lock);
+        m = q.dequeue().second;
+        return *this;
+    }
+    channel& operator << (Msg& m){
+        q.enqueue(m);
+        cnd_var.notify_one();
+        return *this;
+    }
+};
+};

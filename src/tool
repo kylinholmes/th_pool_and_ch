@@ -1,0 +1,35 @@
+#pragma once
+#include "queue"
+#include <mutex>
+namespace tools {
+using std::queue, std::mutex, std::unique_lock;
+using uni_lock = unique_lock<mutex>;
+
+template<typename T> class safe_queue {
+    queue<T> q;
+    mutex m;
+    public:
+        safe_queue()=default;
+        ~safe_queue()=default;
+        bool empty() {
+            uni_lock lock(m);
+            return q.empty();
+        }
+        auto size() {
+            uni_lock lock(m);
+            return q.size();
+        }
+        auto enqueue(T& t){
+            uni_lock lock(m);
+            q.emplace(t);
+        }
+        auto dequeue() {
+            uni_lock lock(m);
+            if(q.empty())
+                return std::pair{false, T{}};
+            auto ret = std::move(q.front());
+            q.pop();
+            return std::pair{true, ret};
+        }
+};
+}

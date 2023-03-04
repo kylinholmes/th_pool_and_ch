@@ -1,0 +1,88 @@
+#pragma once
+#include <mutex>
+#include <queue>
+#include <future>
+#include <vector>
+#include "tool"
+
+namespace th_pool{
+using std::mutex, std::unique_lock;
+using uni_lock = unique_lock<mutex>;
+using tools::safe_queue;
+
+class thread_pool{
+private:
+    class worker {
+            thread_pool *pool_ptr;
+            int id;
+        public:
+            worker(thread_pool *pool, const int id) 
+                :pool_ptr(pool), id(id){}
+            void operator()(){
+                std::function<void()> func;
+                bool ok;
+                while (!pool_ptr->is_shutdown){
+                    {
+                        // 为线程环境加锁，互访问工作线程的休眠和唤醒
+                        uni_lock lock(pool_ptr->m_conditional_mutex);
+
+                        // 如果任务队列为空，阻塞当前线程
+                        if (pool_ptr->m_queue.empty())
+                            pool_ptr->m_conditional_lock.wait(lock); // 等待条件变量通知，开启线程
+
+                        // 取出任务队列中的元素
+                        auto ret = pool_ptr->m_queue.dequeue();
+                        ok = ret.first;
+                        func = ret.second;
+                    }
+                    if (ok)
+                        func();
+                }
+            }
+        };
+
+    bool is_shutdown;
+    safe_queue<std::function<void()>> m_queue;
+    std::vector<std::thread> m_threads;
+    std::mutex m_conditional_mutex; // 线程休眠锁互斥变量
+    std::condition_variable m_conditional_lock; // 线程环境锁，可以让线程处于休眠或者唤醒状态
+public:
+    // 线程池构造函数
+    thread_pool(int n_threads = 4): 
+        m_threads(std::vector<std::thread>(n_threads)), is_shutdown(false){
+            for (int i = 0; i < n_threads; ++i){
+                m_threads[i] = std::thread(worker(this, i));
+            }
+        }
+
+    // Waits until threads finish their current task and shutdowns the pool
+    ~thread_pool(){
+        is_shutdown = true;
+        m_conditional_lock.notify_all(); // 通知，唤醒所有工作线程
+        for (auto& th: m_threads)
+            if (th.joinable()) // 判断线程是否在等待
+                th.join(); // 将线程加入到等待队列
+    }
+    thread_pool(const thread_pool &) = delete;
+    thread_pool(thread_pool &&) = delete;
+    thread_pool &operator=(const thread_pool &) = delete;
+    thread_pool &operator=(thread_pool &&) = delete;
+
+    // Submit a function to be executed asynchronously by the pool
+    template <typename F, typename... Args>
+    auto submit(F &&f, Args &&...args) -> std::future<decltype(f(args...))> {
+        // Create a function with bounded parameter ready to execute
+        auto func = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
+        // Encapsulate it into a shared pointer in order to be able to copy construct
+        auto task_ptr = std::make_shared<std::packaged_task<decltype(f(args...))()>>(func);
+        // Warp packaged task into void function
+        std::function<void()> warpper_func = [task_ptr](){
+            (*task_ptr)();
+        };
+        m_queue.enqueue(warpper_func);
+        m_conditional_lock.notify_one();
+        return task_ptr->get_future();
+    }
+};
+
+};
